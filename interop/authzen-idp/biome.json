@@ -20,7 +20,8 @@
       "!**/.git",
       "!**/node_modules",
       "!**/.react-router",
-      "!**/app/components/ui"
+      "!**/app/components/ui",
+      "!**/test-harness"
     ]
   },
   "formatter": {

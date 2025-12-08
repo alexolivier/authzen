@@ -2,8 +2,9 @@ import { generateCodeVerifier, OAuth2Client } from "@badgateway/oauth2-client";
 import type { ClientSettings } from "@badgateway/oauth2-client/dist/client";
 
 import { createCookie, redirect } from "react-router";
-import { clearAuditLog, pushAuditLog } from "~/lib/auditLog";
+import { pushAuditLog } from "~/lib/auditLog";
 import { AuditType } from "~/types/audit";
+import { listPdps, setActivePdp } from "./pdpState";
 import { getRequiredEnv } from "./utils";
 
 export interface CreateIdpHandlerOptions {
@@ -66,9 +67,16 @@ export function createIdpHandler({
       try {
         client = await getOAuthClient(oauthClient, slug);
       } catch (error) {
+        console.error(
+          `Error initializing OAuth client for IDP ${slug}:`,
+          error,
+        );
+        console.error(error);
         return Response.json(
           {
-            message: `Failed to initialize OAuth client for IDP ${slug}: ${(error as Error).message}`,
+            message: `Failed to initialize OAuth client for IDP ${slug}: ${
+              (error as Error).message
+            }`,
           },
           {
             status: 500,
@@ -80,11 +88,19 @@ export function createIdpHandler({
       const cookieHeader = request.headers.get("Cookie");
 
       if (url.pathname.endsWith("/login")) {
-        clearAuditLog();
+        const pdpId = new URL(request.url).searchParams.get("pdp");
+
+        const pdp = listPdps().find((p) => p === pdpId);
+        if (!pdpId || !pdp) {
+          throw new Error("PDP parameter is required");
+        }
+
         pushAuditLog(AuditType.AuthN, {
           message: `Initiating ${label} login`,
           idp: slug,
         });
+
+        setActivePdp(pdp);
 
         const codeVerifier = await generateCodeVerifier();
 
@@ -117,6 +133,7 @@ export function createIdpHandler({
             idp: slug,
             ok: false,
           });
+          console.error(`PKCE code verifier cookie is missing for IDP ${slug}`);
           return redirectWithClearedCookie("/");
         }
 
@@ -142,13 +159,21 @@ export function createIdpHandler({
           });
 
           if (!idToken) {
+            console.error(`ID token not issued by IDP ${slug}`);
             return redirectWithClearedCookie("/");
           }
 
           return redirectWithClearedCookie(`/#id_token=${idToken}`);
         } catch (error) {
+          console.error(
+            `Error obtaining OAuth2 token from IDP ${slug}:`,
+            error,
+          );
+          console.error(error);
           pushAuditLog(AuditType.AuthN, {
-            message: `Error obtaining OAuth2 token: ${(error as Error).message}`,
+            message: `Error obtaining OAuth2 token: ${
+              (error as Error).message
+            }`,
             idp: slug,
             ok: false,
           });
@@ -191,7 +216,7 @@ async function getOAuthClient(
         );
         discoveryPromise = (async () => {
           const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 8000);
+          const timeout = setTimeout(() => controller.abort(), 20000);
           try {
             const res = await fetch(wellKnown, { signal: controller.signal });
             if (!res.ok)
@@ -221,7 +246,7 @@ async function getOAuthClient(
       authorizationEndpoint: discovery.authorization_endpoint,
     });
   } else {
-    throw new Error(`OAuth client for IDP ${slug} is missing endpoints`);
+    throw new Error(`Failed to build OAuth client for IdP ${slug}`);
   }
 }
 

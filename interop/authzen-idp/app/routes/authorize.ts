@@ -1,3 +1,4 @@
+import { data } from "react-router";
 import { callPdp } from "~/lib/pdpClient";
 import { getActivePdp } from "~/lib/pdpState";
 import type { Route } from "./+types/authorize";
@@ -7,19 +8,22 @@ export async function action({ params, request }: Route.ActionArgs) {
 
   const payload = await readJsonBody(request);
   if (payload === undefined) {
-    return Response.json(
-      { error: "Missing or invalid request body" },
-      { status: 400 },
-    );
+    console.error("Missing or invalid request body");
+    return data({ error: "Missing or invalid request body" }, { status: 400 });
   }
 
-  const pdpResponse = await callPdp({
-    endpoint: pdpPath,
-    payload,
-    pdpId: getActivePdp(),
-  });
+  try {
+    const pdpResponse = await callPdp({
+      endpoint: pdpPath,
+      payload,
+      pdpId: getActivePdp(),
+    });
 
-  return Response.json(pdpResponse);
+    return pdpResponse;
+  } catch (error) {
+    console.error("Error calling PDP:", error);
+    return data({ error: "Failed to communicate with PDP" }, { status: 500 });
+  }
 }
 
 async function readJsonBody(request: Request): Promise<unknown | undefined> {

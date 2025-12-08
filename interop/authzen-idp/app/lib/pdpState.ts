@@ -3,7 +3,7 @@ import type { PdpConfig } from "~/types/pdp";
 
 let activePdp = getInitialActivePdp();
 
-function getInitialActivePdp(): string {
+export function getInitialActivePdp(): string {
   const [firstPdp] = listPdps();
   if (!firstPdp) {
     throw new Error(
@@ -26,6 +26,7 @@ export function getActivePdp(): string {
 
 export function setActivePdp(pdpId: string): void {
   assertPdpExists(pdpId);
+  console.log(`Setting active PDP to ${pdpId}`);
   activePdp = pdpId;
 }
 

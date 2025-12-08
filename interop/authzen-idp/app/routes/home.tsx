@@ -1,17 +1,23 @@
 import { type ReactNode, useCallback, useMemo } from "react";
-import { redirect, useFetcher } from "react-router";
+import { createCookie, data, redirect, useFetcher } from "react-router";
 import { AuditLog, JsonPreview } from "~/components/audit-log";
 import { IdToken } from "~/components/id-token.client";
 import { PDPPicker } from "~/components/pdp-picker";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "~/components/ui/card";
 import { idps } from "~/data/idps.server";
 import { useAuditLogPolling } from "~/hooks/useAuditLogPolling";
 import { useIdTokenFromHash } from "~/hooks/useIdTokenFromHash";
 import { clearAuditLog } from "~/lib/auditLog";
 import { decodeJwtPayload, type JwtPayload } from "~/lib/jwt";
-import { getActivePdp, listPdps, setActivePdp } from "~/lib/pdpState";
+import { getInitialActivePdp, listPdps } from "~/lib/pdpState";
 import { cn } from "~/lib/utils";
 import type { AuditEntry } from "~/types/audit";
 import type { Route } from "./+types/home";
@@ -23,18 +29,39 @@ export function meta(_: Route.MetaArgs) {
   ];
 }
 
-export async function loader(_: Route.LoaderArgs) {
-  return {
-    pdps: listPdps(),
-    activePdp: getActivePdp(),
-    idps: idps.map((idp) => {
-      return {
-        url: `/idp/${idp.slug}/login`,
-        idpLabel: idp.label,
-        idpSlug: idp.slug,
-      };
-    }),
-  };
+const pdpCookie = createCookie(`authzen:pdp`, {
+  httpOnly: true,
+  path: "/",
+  sameSite: "lax",
+  secure: process.env.NODE_ENV === "production",
+  maxAge: 60 * 60 * 24 * 7, // 7 days
+});
+
+export async function loader({ request }: Route.LoaderArgs) {
+  const cookieHeader = request.headers.get("Cookie");
+  const localPDP =
+    (await pdpCookie.parse(cookieHeader)) || getInitialActivePdp();
+
+  const pdpCookieString = await pdpCookie.serialize(localPDP);
+
+  return data(
+    {
+      pdps: listPdps(),
+      activePdp: localPDP,
+      idps: idps.map((idp) => {
+        return {
+          url: `/idp/${idp.slug}/login`,
+          idpLabel: idp.label,
+          idpSlug: idp.slug,
+        };
+      }),
+    },
+    {
+      headers: {
+        "Set-Cookie": pdpCookieString,
+      },
+    },
+  );
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -50,8 +77,13 @@ export async function action({ request }: Route.ActionArgs) {
   if (!selectedPDP || Array.isArray(selectedPDP)) {
     return { error: "Invalid PDP selected", returnTo };
   }
-  setActivePdp(selectedPDP?.toString());
-  return redirect(returnTo);
+  const pdpCookieString = await pdpCookie.serialize(selectedPDP);
+
+  return redirect(returnTo, {
+    headers: {
+      "Set-Cookie": pdpCookieString,
+    },
+  });
 }
 
 export default function Home({ loaderData }: Route.ComponentProps) {
@@ -113,7 +145,9 @@ export default function Home({ loaderData }: Route.ComponentProps) {
             <div className="flex gap-2 flex-wrap">
               {idps.map((idp) => (
                 <Button key={idp.idpSlug} variant="default" size="sm">
-                  <a href={idp.url}>Login with {idp.idpLabel}</a>
+                  <a href={`${idp.url}?pdp=${activePdp}`}>
+                    Login with {idp.idpLabel}
+                  </a>
                 </Button>
               ))}
             </div>
@@ -276,12 +310,19 @@ function AuditLogSection({
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2">
         <CardTitle>{`IdP->PDP Request Log`}</CardTitle>
+        <CardDescription>
+          <p className="text-muted-foreground text-xs">
+            Note: This is the unified audit log of proxied calls to the
+            currently globally active PDP
+          </p>
+        </CardDescription>
         <Button
           disabled={isClearing}
           onClick={onClear}
           size="sm"
           type="button"
           variant="outline"
+          className="hidden"
         >
           Clear
         </Button>

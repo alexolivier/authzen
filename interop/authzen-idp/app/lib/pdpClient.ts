@@ -10,39 +10,44 @@ export async function callPdp({ endpoint, payload, pdpId }: PdpRequestArgs) {
   const body = JSON.stringify(payload);
 
   let response: Response;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
   try {
     response = await fetch(url, {
       method: "POST",
       headers,
       body,
+      signal: controller.signal,
     });
+
+    const responseBody = await parseJson(response);
+    const auditRecord = createAuditRecord({
+      endpoint,
+      payload,
+      pdpId,
+      response,
+      responseBody,
+    });
+
+    pushAuditLog(AuditType.AuthZ, auditRecord);
+
+    if (!response.ok) {
+      throw new Error(
+        auditRecord.message ??
+          `PDP request failed with status ${response.status}`,
+      );
+    }
+
+    return responseBody;
   } catch (error) {
     pushAuditLog(
       AuditType.AuthZ,
       createFailureRecord(endpoint, payload, pdpId, error),
     );
     throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  const responseBody = await parseJson(response);
-  const auditRecord = createAuditRecord({
-    endpoint,
-    payload,
-    pdpId,
-    response,
-    responseBody,
-  });
-
-  pushAuditLog(AuditType.AuthZ, auditRecord);
-
-  if (!response.ok) {
-    throw new Error(
-      auditRecord.message ??
-        `PDP request failed with status ${response.status}`,
-    );
-  }
-
-  return responseBody;
 }
 
 function createFailureRecord(

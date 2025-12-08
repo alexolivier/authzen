@@ -1,6 +1,6 @@
 import type { AuditBody, AuditEntry, AuditType } from "~/types/audit";
 
-const MAX_ENTRIES = 100;
+const MAX_ENTRIES = 25;
 const auditEntries: AuditEntry[] = [];
 
 export function pushAuditLog(type: AuditType, body: AuditBody) {
