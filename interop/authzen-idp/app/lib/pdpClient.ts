@@ -38,6 +38,7 @@ export async function callPdp({ endpoint, payload, pdpId }: PdpRequestArgs) {
     pushAuditLog(AuditType.AuthZ, auditRecord);
 
     if (!response.ok) {
+      console.error("PDP returned error:", responseBody);
       throw new Error(
         auditRecord.message ??
           `PDP request failed with status ${response.status}`,
@@ -46,6 +47,7 @@ export async function callPdp({ endpoint, payload, pdpId }: PdpRequestArgs) {
 
     return responseBody;
   } catch (error) {
+    console.error("Error calling PDP:", error);
     pushAuditLog(
       AuditType.AuthZ,
       createFailureRecord(endpoint, payload, pdpId, error),
