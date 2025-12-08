@@ -45,7 +45,6 @@ export async function loader() {
 export default function Home({ loaderData }: Route.ComponentProps) {
   const { serverPdp, pdps, idps } = loaderData;
   const [localPdp, setLocalPdp] = useState(serverPdp);
-  const setPdpFetcher = useFetcher();
 
   const auditFetcher = useFetcher<{ auditLog: AuditEntry[] }>();
 
@@ -55,16 +54,9 @@ export default function Home({ loaderData }: Route.ComponentProps) {
   const tokenPayload = useMemo(() => decodeJwtPayload(idToken), [idToken]);
   const auditEntries = auditFetcher.data?.auditLog ?? [];
 
-  const isUpdatingPdp = setPdpFetcher.state !== "idle";
-
   return (
     <main className="flex-1 bg-background">
-      <HomeHeader
-        activePdp={localPdp}
-        isUpdatingPdp={isUpdatingPdp}
-        pdps={pdps}
-        onSelectPdp={setLocalPdp}
-      />
+      <HomeHeader activePdp={localPdp} pdps={pdps} onSelectPdp={setLocalPdp} />
       <div className="container mx-auto my-4 px-2">
         <Card>
           <CardHeader>
@@ -99,23 +91,17 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 interface HomeHeaderProps {
   activePdp: string;
   pdps: string[];
-  isUpdatingPdp: boolean;
   onSelectPdp: (pdp: string) => void;
 }
 
-function HomeHeader({
-  activePdp,
-  pdps,
-  isUpdatingPdp,
-  onSelectPdp,
-}: HomeHeaderProps) {
+function HomeHeader({ activePdp, pdps, onSelectPdp }: HomeHeaderProps) {
   return (
     <div className="bg-sidebar-primary-foreground border-b border-b-border">
       <div className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:gap-6">
         <h1 className="text-2xl font-bold">OpenID AuthZEN IdP Interop</h1>
         <PDPPicker
           activePdp={activePdp}
-          disabled={!pdps.length || isUpdatingPdp}
+          disabled={!pdps.length}
           pdpList={pdps}
           setPdp={onSelectPdp}
         />
