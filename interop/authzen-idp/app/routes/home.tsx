@@ -1,5 +1,5 @@
-import { type ReactNode, useCallback, useMemo } from "react";
-import { createCookie, data, redirect, useFetcher } from "react-router";
+import { type ReactNode, useMemo, useState } from "react";
+import { data, useFetcher } from "react-router";
 import { AuditLog, JsonPreview } from "~/components/audit-log";
 import { IdToken } from "~/components/id-token.client";
 import { PDPPicker } from "~/components/pdp-picker";
@@ -15,9 +15,8 @@ import {
 import { idps } from "~/data/idps.server";
 import { useAuditLogPolling } from "~/hooks/useAuditLogPolling";
 import { useIdTokenFromHash } from "~/hooks/useIdTokenFromHash";
-import { clearAuditLog } from "~/lib/auditLog";
 import { decodeJwtPayload, type JwtPayload } from "~/lib/jwt";
-import { getInitialActivePdp, listPdps } from "~/lib/pdpState";
+import { getActivePdp, listPdps } from "~/lib/pdpState";
 import { cn } from "~/lib/utils";
 import type { AuditEntry } from "~/types/audit";
 import type { Route } from "./+types/home";
@@ -29,67 +28,25 @@ export function meta(_: Route.MetaArgs) {
   ];
 }
 
-const pdpCookie = createCookie(`authzen:pdp`, {
-  httpOnly: true,
-  path: "/",
-  sameSite: "lax",
-  secure: process.env.NODE_ENV === "production",
-  maxAge: 60 * 60 * 24 * 7, // 7 days
-});
-
-export async function loader({ request }: Route.LoaderArgs) {
-  const cookieHeader = request.headers.get("Cookie");
-  const localPDP =
-    (await pdpCookie.parse(cookieHeader)) || getInitialActivePdp();
-
-  const pdpCookieString = await pdpCookie.serialize(localPDP);
-
-  return data(
-    {
-      pdps: listPdps(),
-      activePdp: localPDP,
-      idps: idps.map((idp) => {
-        return {
-          url: `/idp/${idp.slug}/login`,
-          idpLabel: idp.label,
-          idpSlug: idp.slug,
-        };
-      }),
-    },
-    {
-      headers: {
-        "Set-Cookie": pdpCookieString,
-      },
-    },
-  );
-}
-
-export async function action({ request }: Route.ActionArgs) {
-  const formData = await request.formData();
-  const intent = formData.get("intent");
-
-  if (intent === "clear-audit-log") {
-    clearAuditLog();
-    return { status: "cleared" };
-  }
-  const selectedPDP = formData.get("pdp");
-  const returnTo = formData.get("returnTo")?.toString() || "/";
-  if (!selectedPDP || Array.isArray(selectedPDP)) {
-    return { error: "Invalid PDP selected", returnTo };
-  }
-  const pdpCookieString = await pdpCookie.serialize(selectedPDP);
-
-  return redirect(returnTo, {
-    headers: {
-      "Set-Cookie": pdpCookieString,
-    },
+export async function loader() {
+  return data({
+    pdps: listPdps(),
+    serverPdp: getActivePdp(),
+    idps: idps.map((idp) => {
+      return {
+        url: `/idp/${idp.slug}/login`,
+        idpLabel: idp.label,
+        idpSlug: idp.slug,
+      };
+    }),
   });
 }
 
 export default function Home({ loaderData }: Route.ComponentProps) {
-  const { activePdp, pdps, idps } = loaderData;
+  const { serverPdp, pdps, idps } = loaderData;
+  const [localPdp, setLocalPdp] = useState(serverPdp);
   const setPdpFetcher = useFetcher();
-  const clearFetcher = useFetcher();
+
   const auditFetcher = useFetcher<{ auditLog: AuditEntry[] }>();
 
   useAuditLogPolling(auditFetcher);
@@ -97,44 +54,16 @@ export default function Home({ loaderData }: Route.ComponentProps) {
   const idToken = useIdTokenFromHash();
   const tokenPayload = useMemo(() => decodeJwtPayload(idToken), [idToken]);
   const auditEntries = auditFetcher.data?.auditLog ?? [];
-  const isClearingAuditLog = clearFetcher.state !== "idle";
+
   const isUpdatingPdp = setPdpFetcher.state !== "idle";
-
-  const handlePdpSelection = useCallback(
-    (pdp: string) => {
-      if (!pdp || pdp === activePdp) {
-        return;
-      }
-
-      const returnTo = getCurrentPathname();
-
-      setPdpFetcher.submit(
-        {
-          intent: "set-active-pdp",
-          pdp,
-          returnTo,
-        },
-        { method: "post" },
-      );
-    },
-    [activePdp, setPdpFetcher],
-  );
-
-  const handleClearAuditLog = useCallback(() => {
-    if (clearFetcher.state !== "idle") {
-      return;
-    }
-
-    clearFetcher.submit({ intent: "clear-audit-log" }, { method: "post" });
-  }, [clearFetcher]);
 
   return (
     <main className="flex-1 bg-background">
       <HomeHeader
-        activePdp={activePdp}
+        activePdp={localPdp}
         isUpdatingPdp={isUpdatingPdp}
         pdps={pdps}
-        onSelectPdp={handlePdpSelection}
+        onSelectPdp={setLocalPdp}
       />
       <div className="container mx-auto my-4 px-2">
         <Card>
@@ -145,7 +74,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
             <div className="flex gap-2 flex-wrap">
               {idps.map((idp) => (
                 <Button key={idp.idpSlug} variant="default" size="sm">
-                  <a href={`${idp.url}?pdp=${activePdp}`}>
+                  <a href={`${idp.url}?pdp=${localPdp}`}>
                     Login with {idp.idpLabel}
                   </a>
                 </Button>
@@ -160,11 +89,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
           tokenPayload={tokenPayload}
         />
         <div className="md:col-span-2">
-          <AuditLogSection
-            auditEntries={auditEntries}
-            isClearing={isClearingAuditLog}
-            onClear={handleClearAuditLog}
-          />
+          <AuditLogSection auditEntries={auditEntries} />
         </div>
       </div>
     </main>
@@ -297,15 +222,9 @@ function StatusItem({
 
 interface AuditLogSectionProps {
   auditEntries: AuditEntry[];
-  isClearing: boolean;
-  onClear: () => void;
 }
 
-function AuditLogSection({
-  auditEntries,
-  isClearing,
-  onClear,
-}: AuditLogSectionProps) {
+function AuditLogSection({ auditEntries }: AuditLogSectionProps) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2">
@@ -316,27 +235,10 @@ function AuditLogSection({
             currently globally active PDP
           </p>
         </CardDescription>
-        <Button
-          disabled={isClearing}
-          onClick={onClear}
-          size="sm"
-          type="button"
-          variant="outline"
-          className="hidden"
-        >
-          Clear
-        </Button>
       </CardHeader>
       <CardContent className="space-y-4">
         <AuditLog entries={auditEntries} />
       </CardContent>
     </Card>
   );
-}
-
-function getCurrentPathname(): string {
-  if (typeof window === "undefined") {
-    return "/";
-  }
-  return window.location.pathname || "/";
 }
