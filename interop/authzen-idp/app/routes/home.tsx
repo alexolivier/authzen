@@ -15,6 +15,7 @@ import {
 import { idps } from "~/data/idps.server";
 import { useAuditLogPolling } from "~/hooks/useAuditLogPolling";
 import { useIdTokenFromHash } from "~/hooks/useIdTokenFromHash";
+import { getAuditLog } from "~/lib/auditLog";
 import { decodeJwtPayload, type JwtPayload } from "~/lib/jwt";
 import { getActivePdp, listPdps } from "~/lib/pdpState";
 import { cn } from "~/lib/utils";
@@ -32,6 +33,7 @@ export async function loader() {
   return data({
     pdps: listPdps(),
     serverPdp: getActivePdp(),
+    auditLog: getAuditLog(),
     idps: idps.map((idp) => {
       return {
         url: `/idp/${idp.slug}/login`,

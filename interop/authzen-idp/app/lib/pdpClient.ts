@@ -13,12 +13,18 @@ export async function callPdp({ endpoint, payload, pdpId }: PdpRequestArgs) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20000);
   try {
+    const start = Date.now();
+    console.log(`Calling PDP at ${url} with payload:`, payload);
     response = await fetch(url, {
       method: "POST",
       headers,
       body,
       signal: controller.signal,
     });
+    const duration = Date.now() - start;
+    console.log(
+      `PDP responded in ${duration}ms with status ${response.status}`,
+    );
 
     const responseBody = await parseJson(response);
     const auditRecord = createAuditRecord({

@@ -2,7 +2,6 @@ import SyntaxHighlighter from "react-syntax-highlighter";
 import docco from "react-syntax-highlighter/dist/esm/styles/hljs/vs2015";
 
 import { Badge } from "~/components/ui/badge";
-import { ScrollArea } from "~/components/ui/scroll-area";
 import {
   type AuditEntry,
   AuditType,
@@ -33,16 +32,14 @@ export function AuditLog({ entries }: AuditLogProps) {
   }
 
   return (
-    <ScrollArea className="max-h-[50rem] overflow-scroll">
-      <div className="space-y-2">
-        {authorizationEntries.map((entry, index) => (
-          <AuditLogEntry
-            key={`${entry.timestamp}-${entry.type}-${index}`}
-            entry={entry}
-          />
-        ))}
-      </div>
-    </ScrollArea>
+    <div className="space-y-2">
+      {authorizationEntries.map((entry, index) => (
+        <AuditLogEntry
+          key={`${entry.timestamp}-${entry.type}-${index}`}
+          entry={entry}
+        />
+      ))}
+    </div>
   );
 }
 
