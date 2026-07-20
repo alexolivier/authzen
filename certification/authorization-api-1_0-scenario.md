@@ -572,7 +572,9 @@ The PDP MUST return HTTP 400 when a required sub-field is missing.
 
 ### Invalid content type {#c-2-4-3}
 
-The PDP MUST return HTTP 400 when the request `Content-Type` is not `application/json`.
+The PDP MUST reject a request whose `Content-Type` is not `application/json` with a client-error status. The harness accepts either **HTTP 400** (Bad Request) or **HTTP 415** (Unsupported Media Type).
+
+`415` is the RFC 9110 §15.5.16 canonical status for an unsupported media type; `400` is accepted because the specification's error table ([](#c-5), and §Error Responses of the Authorization API) enumerates `400` as the generic request-rejection code and some PDPs surface media-type faults there. A `404` is **not** accepted for this case: a wrong `Content-Type` is a request-content fault, not a missing resource, and accepting `404` would mask routing defects.
 
 ### Malformed JSON {#c-2-4-4}
 
@@ -610,6 +612,33 @@ The PDP MUST return HTTP 400 when a field has an invalid type.
 
 **Expected:** HTTP 400.
 
+### Invalid HTTP method {#c-2-4-7}
+
+All Authorization API requests are made via HTTP `POST` (Transport, HTTPS JSON Binding). The PDP MUST reject a request to the evaluation endpoint that uses any other method (for example `GET` or `PUT`) with a client-error status. The harness accepts **HTTP 405** (Method Not Allowed) or **HTTP 400** (Bad Request); `405` is the RFC 9110 §15.5.6 canonical status and, when returned, SHOULD include an `Allow` header advertising `POST`.
+
+A `404` is tolerated only when the PDP's framework routes by method-and-path together and therefore reports a wrong-method request as an unmatched route; `405` is preferred and `404` SHOULD NOT be relied upon.
+
+**Request (`GET` to the evaluation endpoint):**
+
+~~~ http
+GET /access/v1/evaluation HTTP/1.1
+Host: pdp.example.com
+~~~
+
+**Expected:** HTTP 405 (preferred) or HTTP 400. `404` is tolerated per the note above.
+
+**Request (`PUT` to the evaluation endpoint):**
+
+~~~ http
+PUT /access/v1/evaluation HTTP/1.1
+Host: pdp.example.com
+Content-Type: application/json
+
+{ "subject": { "type": "user", "id": "alice" }, "action": { "name": "read" }, "resource": { "type": "record", "id": "record-1" } }
+~~~
+
+**Expected:** HTTP 405 (preferred) or HTTP 400. `404` is tolerated per the note above.
+
 ## Header Handling {#c-2-5}
 
 ### X-Request-ID echo {#c-2-5-1}
@@ -638,6 +667,12 @@ POST /access/v1/evaluations
 ~~~
 
 Or at a path discoverable via the PDP metadata endpoint.
+
+### Evaluation semantics support {#c-3-1-1}
+
+The `options` object and its `evaluations_semantic` key are OPTIONAL, and `execute_all` is the default semantic — an `evaluations` request with no `options.evaluations_semantic` is evaluated under `execute_all`. For certification the PDP MUST support `execute_all` (equivalently, the absence of the option). The harness always pins `execute_all` explicitly and does not exercise the short-circuit semantics.
+
+Support for the short-circuit semantics `deny_on_first_deny` and `permit_on_first_permit` is **NOT required** for certification, and the harness does not send them. The specification does not define a PDP's behaviour when it receives a semantic value it does not implement; that behaviour is therefore implementation-defined (a PDP MAY fall back to `execute_all`, or MAY reject the request with HTTP 400), and the harness asserts nothing about it.
 
 ## Request Acceptance {#c-3-2}
 
@@ -982,6 +1017,8 @@ Per the specification, if the `evaluations` array is not present, the Access Eva
 }
 ~~~
 
+The response MUST use the single Access Evaluation response shape — a top-level `decision` field and **no** `evaluations` array. A response that wraps the result in a one-element `evaluations` array is a certification failure for this test, because "backwards-compatible with the single Access Evaluation API" means both the request *and* the response take the single-evaluation form.
+
 This is a fixture request ([](#c-1-4), rule 1). The harness validates both the response structure and the decision value.
 
 ### Empty evaluations array (backwards-compatible) {#c-3-4-3}
@@ -1006,6 +1043,8 @@ Per the specification, if the `evaluations` array is empty, the Access Evaluatio
   "decision": true
 }
 ~~~
+
+As in [](#c-3-4-2), the response MUST use the single Access Evaluation response shape — a top-level `decision` field and **no** `evaluations` array.
 
 This is a fixture request ([](#c-1-4), rule 1). The harness validates both the response structure and the decision value.
 
@@ -1518,6 +1557,10 @@ These requirements apply to all certification levels.
 3. Missing required fields MUST return HTTP 400.
 4. The PDP MUST echo the `X-Request-ID` header if present in the request.
 5. The PDP MUST ignore unknown fields in the request body.
+6. A request whose `Content-Type` is not `application/json` MUST be rejected with HTTP 400 or HTTP 415 ([](#c-2-4-3)).
+7. A request using an HTTP method other than `POST` MUST be rejected with HTTP 405 (preferred) or HTTP 400 ([](#c-2-4-7)).
+
+**Transport error status codes.** The Authorization API describes payload/transport errors broadly as any `4XX`/`5XX` status, while the Error Responses table enumerates the specific codes the PDP itself generates for request-level faults (`400`, `401`, `403`, `500`). These are not in conflict: the enumerated codes are the *semantic* errors a PDP returns about a request's validity, authentication, authorization, or processing, whereas protocol-mechanics statuses (for example `405`, `415`) are governed by standard HTTP and are neither required nor forbidden. Where this scenario pins an exact status, the harness enforces it; where the scenario is silent, the harness accepts any client-error (`4XX`) status whose semantics match the fault, preferring the RFC-canonical code.
 
 
 # Discovery Certification: PDP Metadata {#c-6}
