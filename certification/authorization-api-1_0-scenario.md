@@ -93,7 +93,7 @@ Prerequisites:
 |--------------------------|-------|
 | **Basic Core** | [](#c-2-2-1), [](#c-2-2-2), [](#c-2-2-3), [](#c-2-2-8), [](#c-2-2-9), [](#c-2-3), [](#c-2-4), [](#c-2-5), [](#c-2-6) |
 | **Basic Properties** | [](#c-2-2-4), [](#c-2-2-5), [](#c-2-2-6), [](#c-2-2-7) |
-| **Batch Core** | [](#c-3-2-1), [](#c-3-2-2), [](#c-3-2-5), [](#c-3-2-6), [](#c-3-3), [](#c-3-4) |
+| **Batch Core** | [](#c-3-2-1), [](#c-3-2-2), [](#c-3-2-5), [](#c-3-2-6), [](#c-3-3), [](#c-3-4), [](#c-3-5-2) |
 | **Batch Properties** | [](#c-3-2-3), [](#c-3-2-4), [](#c-3-2-7) |
 | **Search Core** | [](#c-4-2-1), [](#c-4-2-2), [](#c-4-2-3), [](#c-4-3-1), [](#c-4-3-2), [](#c-4-3-3), [](#c-4-4-1), [](#c-4-4-2), [](#c-4-5), [](#c-4-6), [](#c-4-7) |
 | **Search Properties** | [](#c-4-2-4), [](#c-4-3-4), [](#c-4-4-3) |
@@ -931,7 +931,7 @@ This test exercises the default `execute_all` evaluation semantic, under which t
 
 For an otherwise valid batch payload in which a single evaluation is missing a required field, the PDP MUST return HTTP 200 with an `evaluations` array matching the request cardinality and ordering ([](#c-3-3-1), [](#c-3-3-2)), and MUST denote the failed item with `"decision": false` (it MAY include error details in that item's `context`).
 
-> **Note:** The specification permits, but does not require, this `decision: false` denotation for per-item failures under `execute_all`, and it separately requires a `400 Bad Request` when a required attribute is omitted from a (whole) request. This scenario adopts the per-item `execute_all` interpretation for failures *inside* an otherwise valid batch; transport-level or whole-payload failures (for example malformed JSON, or a request that is invalid at the top level) remain HTTP error responses as defined in [](#c-2-4). The short-circuit semantics (`deny_on_first_deny`, `permit_on_first_permit`) are out of scope for this test.
+> **Note:** The specification permits, but does not require, this `decision: false` denotation for per-item failures under `execute_all`, and it separately requires a `400 Bad Request` when a required attribute is omitted from a (whole) request. This scenario adopts the per-item `execute_all` interpretation for failures *inside* an otherwise valid batch; transport-level or whole-payload failures (for example malformed JSON, or a request that is invalid at the top level) remain HTTP error responses as defined in [](#c-2-4). The short-circuit semantics (`deny_on_first_deny`, `permit_on_first_permit`) are out of scope for this test; see [](#c-3-5).
 
 **Request (second evaluation missing resource):**
 
@@ -1008,6 +1008,47 @@ Per the specification, if the `evaluations` array is empty, the Access Evaluatio
 ~~~
 
 This is a fixture request ([](#c-1-4), rule 1). The harness validates both the response structure and the decision value.
+
+
+## Evaluation Semantics {#c-3-5}
+
+The specification defines three evaluation semantics, selected by the PEP with `options.evaluations_semantic`: `execute_all` (the default), `deny_on_first_deny`, and `permit_on_first_permit`. The `options` object is OPTIONAL for the PEP, and the specification does not say which semantics a PDP must implement. This section sets out what certification requires.
+
+### Supported semantics {#c-3-5-1}
+
+A PDP certifying at Batch Core MUST support `execute_all`, as exercised in [](#c-3-4-1).
+
+Support for `deny_on_first_deny` and `permit_on_first_permit` is OPTIONAL for certification.
+
+A PDP that supports `deny_on_first_deny` or `permit_on_first_permit` MAY short-circuit, returning an `evaluations` array that ends at the deciding evaluation, or MAY return a result for every evaluation in the request. Short-circuiting is not a certification requirement, because the specification does not say normatively whether a short-circuited response is truncated.
+
+The harness includes tests for `deny_on_first_deny` and `permit_on_first_permit`. They are outside the certification test plan: they are reported for information and do not affect the certification result.
+
+### Unsupported evaluation semantic {#c-3-5-2}
+
+If a request carries an `evaluations_semantic` value that the PDP does not support, the PDP MUST reject the request with HTTP 400 and MUST NOT fall back to another semantic. This covers both a value the specification does not define and a value the specification defines but the PDP does not implement.
+
+**Request (value not defined by the specification):**
+
+~~~ json
+{
+  "subject": { "type": "user", "id": "alice" },
+  "action": { "name": "read" },
+  "options": { "evaluations_semantic": "first_applicable" },
+  "evaluations": [
+    {
+      "resource": { "type": "record", "id": "record-1" }
+    },
+    {
+      "resource": { "type": "record", "id": "record-2" }
+    }
+  ]
+}
+~~~
+
+**Expected:** HTTP 400.
+
+A PDP that does not implement `deny_on_first_deny` or `permit_on_first_permit` returns HTTP 400 for those values too. The harness does not send them in the certification test plan, since it cannot tell an unsupported semantic from an implementation fault.
 
 
 # Search Certification {#c-4}
